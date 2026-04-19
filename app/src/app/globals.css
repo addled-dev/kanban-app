@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --vsc-bg: #ffffff;
+  --vsc-sidebar: #f3f3f3;
+  --vsc-activitybar: #2c2c2c;
+  --vsc-border: #e4e4e4;
+  --vsc-hover: #e8e8e8;
+  --vsc-text: #1f1f1f;
+  --vsc-muted: #717171;
+  --vsc-accent: #007acc;
+  --vsc-accent-hover: #005a9e;
+  --vsc-input-bg: #ffffff;
+  --vsc-input-border: #cecece;
+  --vsc-card-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  --vsc-card-shadow-hover: 0 4px 16px rgba(0,0,0,0.18);
+  --postit-backlog: #f3e8ff;       --postit-backlog-accent: #7c3aed;    --postit-backlog-border: #c084fc;
+  --postit-todo: #fefce8;          --postit-todo-accent: #a16207;       --postit-todo-border: #facc15;
+  --postit-in-progress: #eff6ff;   --postit-in-progress-accent: #1d4ed8;--postit-in-progress-border: #60a5fa;
+  --postit-review: #fff7ed;        --postit-review-accent: #c2410c;     --postit-review-border: #fb923c;
+  --postit-done: #f0fdf4;          --postit-done-accent: #15803d;       --postit-done-border: #4ade80;
+}
+
+.dark {
+  --vsc-bg: #1e1e1e;
+  --vsc-sidebar: #252526;
+  --vsc-activitybar: #333333;
+  --vsc-border: #3e3e42;
+  --vsc-hover: #2a2d2e;
+  --vsc-text: #d4d4d4;
+  --vsc-muted: #858585;
+  --vsc-accent: #007acc;
+  --vsc-accent-hover: #0e639c;
+  --vsc-input-bg: #3c3c3c;
+  --vsc-input-border: #3c3c3c;
+  --vsc-card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --vsc-card-shadow-hover: 0 4px 16px rgba(0,0,0,0.55);
+  --postit-backlog: #2e1a47;       --postit-backlog-accent: #a78bfa;    --postit-backlog-border: #7c3aed;
+  --postit-todo: #2d2a07;          --postit-todo-accent: #fde047;       --postit-todo-border: #ca8a04;
+  --postit-in-progress: #172554;   --postit-in-progress-accent: #60a5fa;--postit-in-progress-border: #1d4ed8;
+  --postit-review: #2c1503;        --postit-review-accent: #fb923c;     --postit-review-border: #c2410c;
+  --postit-done: #052e16;          --postit-done-accent: #4ade80;       --postit-done-border: #15803d;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;padding:0;background:var(--vsc-bg);color:var(--vsc-text);
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.5;
+  -webkit-font-smoothing:antialiased}
+
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(100,100,100,0.4);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:rgba(100,100,100,0.6)}
+
+.vsc-input{background:var(--vsc-input-bg);border:1px solid var(--vsc-input-border);
+  color:var(--vsc-text);padding:6px 10px;border-radius:2px;font-size:13px;outline:none;
+  width:100%;transition:border-color 0.1s;font-family:inherit}
+.vsc-input:focus{border-color:var(--vsc-accent)}
+.vsc-input::placeholder{color:var(--vsc-muted)}
+
+.vsc-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;font-size:13px;
+  border-radius:2px;border:1px solid transparent;cursor:pointer;transition:background 0.1s,border-color 0.1s;
+  font-family:inherit;white-space:nowrap}
+.vsc-btn-primary{background:var(--vsc-accent);color:#fff;border-color:var(--vsc-accent)}
+.vsc-btn-primary:hover{background:var(--vsc-accent-hover);border-color:var(--vsc-accent-hover)}
+.vsc-btn-secondary{background:transparent;color:var(--vsc-text);border-color:var(--vsc-border)}
+.vsc-btn-secondary:hover{background:var(--vsc-hover)}
+.vsc-btn-ghost{background:transparent;color:var(--vsc-muted);border-color:transparent}
+.vsc-btn-ghost:hover{background:var(--vsc-hover);color:var(--vsc-text)}
+.vsc-btn-danger{background:transparent;color:#f44747;border-color:#f44747}
+.vsc-btn-danger:hover{background:rgba(244,71,71,0.12)}
+.vsc-btn:disabled{opacity:0.5;cursor:not-allowed}
+
+.postit{border-radius:3px;box-shadow:var(--vsc-card-shadow);transition:box-shadow 0.15s,transform 0.1s;
+  border-left-width:3px;border-left-style:solid}
+.postit:hover{box-shadow:var(--vsc-card-shadow-hover);transform:translateY(-1px)}
+.postit-backlog{background:var(--postit-backlog);border-left-color:var(--postit-backlog-border)}
+.postit-todo{background:var(--postit-todo);border-left-color:var(--postit-todo-border)}
+.postit-in-progress{background:var(--postit-in-progress);border-left-color:var(--postit-in-progress-border)}
+.postit-review{background:var(--postit-review);border-left-color:var(--postit-review-border)}
+.postit-done{background:var(--postit-done);border-left-color:var(--postit-done-border)}
+.postit-dragging{box-shadow:0 8px 24px rgba(0,0,0,0.3);transform:rotate(1.5deg) scale(1.02)}
+
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.animate-fade-in{animation:fadeIn 0.15s ease-out}
+.animate-slide-up{animation:slideUp 0.2s ease-out}
