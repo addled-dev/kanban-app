@@ -184,3 +184,23 @@ kanban-board/
             ├── mcp-server.ts   # User-scoped MCP tool definitions
             └── mcp-sessions.ts # SSE session store + transport adapter
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome! Please follow this workflow:
+
+1. **Fork** the repo and create a branch from `main` (`git checkout -b feat/my-feature`)
+2. Make your changes — keep commits focused and messages descriptive
+3. **Test** your changes locally with `docker compose up`
+4. Open a **Pull Request** against `main` with a clear description of what and why
+5. A project maintainer will review and approve before merging — direct pushes to `main` are not permitted
+
+Please open an issue first for significant changes so the approach can be discussed before you invest time coding it.
+
+---
+
+## License
+
+[MIT](LICENSE)
