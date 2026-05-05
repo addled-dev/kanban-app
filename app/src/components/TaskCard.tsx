@@ -1,6 +1,6 @@
 'use client';
 
-import { Task, TaskStatus, PRIORITY_CONFIG } from '@/types';
+import { Task, TaskStatus, PRIORITY_CONFIG, WORK_ITEM_TYPE_CONFIG } from '@/types';
 import { Calendar, Paperclip } from 'lucide-react';
 import { format, isPast, isToday } from 'date-fns';
 
@@ -12,6 +12,7 @@ const STATUS_CLASS: Record<TaskStatus, string> = {
 interface Props { task: Task; status: TaskStatus; isDragging: boolean; onClick: () => void; }
 
 export default function TaskCard({ task, status, isDragging, onClick }: Props) {
+  const typeConfig = WORK_ITEM_TYPE_CONFIG[task.type];
   const dueDateColor = task.dueDate
     ? isToday(new Date(task.dueDate)) ? '#ca8a04'
       : isPast(new Date(task.dueDate)) ? '#dc2626'
@@ -23,6 +24,27 @@ export default function TaskCard({ task, status, isDragging, onClick }: Props) {
       onClick={onClick} style={{ padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}>
       {/* Priority + title */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
+        <span
+          title={typeConfig.label}
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            flexShrink: 0,
+            background: `${typeConfig.color}22`,
+            color: typeConfig.color,
+            border: `1px solid ${typeConfig.color}66`,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 10,
+            fontWeight: 700,
+            lineHeight: 1,
+            marginTop: 1,
+          }}
+        >
+          {typeConfig.symbol}
+        </span>
         {task.priority && (
           <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 4,
                          background: PRIORITY_CONFIG[task.priority].color }}

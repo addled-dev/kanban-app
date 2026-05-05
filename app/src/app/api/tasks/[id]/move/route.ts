@@ -42,7 +42,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const updated = await prisma.task.update({
     where: { id: params.id },
     data: { status, position },
-    include: { assignee: { select: { id: true, email: true, name: true } }, attachments: true },
+    include: {
+      assignee: { select: { id: true, email: true, name: true } },
+      attachments: true,
+      children: { select: { id: true } },
+    },
   });
-  return NextResponse.json(updated);
+
+  return NextResponse.json({
+    ...updated,
+    childIds: updated.children.map((child) => child.id),
+    previousSiblingId: null,
+    nextSiblingId: null,
+  });
 }

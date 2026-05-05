@@ -32,6 +32,13 @@ enum Priority {
   HIGH
 }
 
+enum WorkItemType {
+  EPIC
+  FEATURE
+  STORY
+  TASK
+}
+
 model User {
   id            String   @id @default(cuid())
   email         String   @unique
@@ -132,6 +139,8 @@ model Task {
   id          String     @id @default(cuid())
   title       String
   description String?
+  type        WorkItemType @default(TASK)
+  parentId    String?
   status      TaskStatus @default(BACKLOG)
   priority    Priority?
   dueDate     DateTime?
@@ -146,11 +155,15 @@ model Task {
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   creator     User         @relation("TaskCreator", fields: [creatorId], references: [id])
   assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  parent      Task?        @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Task[]       @relation("TaskHierarchy")
   attachments Attachment[]
 
   @@index([projectId])
   @@index([status])
   @@index([projectId, status])
+  @@index([projectId, parentId])
+  @@index([projectId, type])
 }
 
 model Attachment {

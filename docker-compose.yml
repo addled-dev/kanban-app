@@ -41,6 +41,10 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-Kanban Board <noreply@example.com>}
       APP_URL: ${APP_URL:-http://localhost:3000}
+      # MCP OAuth2 bearer token validation (optional)
+      MCP_OAUTH_ISSUER: ${MCP_OAUTH_ISSUER:-}
+      MCP_OAUTH_JWKS_URL: ${MCP_OAUTH_JWKS_URL:-}
+      MCP_OAUTH_AUDIENCE: ${MCP_OAUTH_AUDIENCE:-}
     volumes:
       - uploads:/uploads
     depends_on:

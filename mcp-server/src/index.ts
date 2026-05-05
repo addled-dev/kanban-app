@@ -3,23 +3,174 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
 const prisma = new PrismaClient();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 const API_KEY = process.env.MCP_API_KEY ?? 'mcp_secret_key_change_me';
+const OAUTH_ISSUER = process.env.MCP_OAUTH_ISSUER;
+const OAUTH_AUDIENCE = process.env.MCP_OAUTH_AUDIENCE;
+const OAUTH_JWKS_URL = process.env.MCP_OAUTH_JWKS_URL;
+
+const STATUS_VALUES = ['BACKLOG', 'TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'] as const;
+const PRIORITY_VALUES = ['LOW', 'MEDIUM', 'HIGH'] as const;
+const WORK_ITEM_TYPES = ['EPIC', 'FEATURE', 'STORY', 'TASK'] as const;
+const PARENT_TYPE_BY_CHILD: Record<(typeof WORK_ITEM_TYPES)[number], (typeof WORK_ITEM_TYPES)[number] | null> = {
+  EPIC: null,
+  FEATURE: 'EPIC',
+  STORY: 'FEATURE',
+  TASK: 'STORY',
+};
+
+let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+function requiredParentType(type: (typeof WORK_ITEM_TYPES)[number]) {
+  return PARENT_TYPE_BY_CHILD[type];
+}
+
+function getJwks() {
+  if (!OAUTH_JWKS_URL) return null;
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(OAUTH_JWKS_URL));
+  }
+  return jwks;
+}
+
+async function verifyBearerToken(token: string): Promise<JWTPayload | null> {
+  const keyset = getJwks();
+  if (!keyset || !OAUTH_ISSUER) {
+    return null;
+  }
+  const result = await jwtVerify(token, keyset, {
+    issuer: OAUTH_ISSUER,
+    audience: OAUTH_AUDIENCE,
+  });
+  return result.payload;
+}
+
+async function createWorkItem(input: {
+  projectId: string;
+  creatorEmail: string;
+  title: string;
+  description?: string;
+  type: (typeof WORK_ITEM_TYPES)[number];
+  parentId?: string;
+  status?: (typeof STATUS_VALUES)[number];
+  priority?: (typeof PRIORITY_VALUES)[number];
+  dueDate?: string;
+  labels?: string[];
+  assigneeEmail?: string;
+}) {
+  const project = await prisma.project.findUnique({ where: { id: input.projectId } });
+  if (!project) {
+    throw new Error(`Project ${input.projectId} not found`);
+  }
+
+  const creator = await prisma.user.findUnique({ where: { email: input.creatorEmail } });
+  if (!creator) {
+    throw new Error(`No user found with email ${input.creatorEmail}`);
+  }
+
+  const neededParentType = requiredParentType(input.type);
+  const normalizedParentId = input.parentId ?? null;
+  if (neededParentType && !normalizedParentId) {
+    throw new Error(`${input.type} requires a parent ${neededParentType.toLowerCase()}`);
+  }
+  if (!neededParentType && normalizedParentId) {
+    throw new Error(`${input.type} cannot have a parent`);
+  }
+
+  if (normalizedParentId) {
+    const parent = await prisma.task.findFirst({
+      where: { id: normalizedParentId, projectId: input.projectId },
+      select: { id: true, type: true },
+    });
+    if (!parent) {
+      throw new Error('Parent item not found in this project');
+    }
+    if (parent.type !== neededParentType) {
+      throw new Error(`${input.type} parent must be of type ${neededParentType}`);
+    }
+  }
+
+  let assigneeId: string | undefined;
+  if (input.assigneeEmail) {
+    const assignee = await prisma.user.findUnique({ where: { email: input.assigneeEmail } });
+    if (!assignee) {
+      throw new Error(`No user found with assignee email ${input.assigneeEmail}`);
+    }
+    assigneeId = assignee.id;
+  }
+
+  const effectiveStatus = input.status ?? 'BACKLOG';
+  const lastTask = await prisma.task.findFirst({
+    where: { projectId: input.projectId, status: effectiveStatus },
+    orderBy: { position: 'desc' },
+  });
+  const position = (lastTask?.position ?? 0) + 1000;
+
+  return prisma.task.create({
+    data: {
+      title: input.title,
+      description: input.description,
+      type: input.type,
+      parentId: normalizedParentId,
+      status: effectiveStatus,
+      priority: input.priority,
+      dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
+      labels: input.labels ?? [],
+      position,
+      projectId: input.projectId,
+      creatorId: creator.id,
+      assigneeId,
+    },
+    include: {
+      assignee: { select: { id: true, email: true, name: true } },
+      attachments: true,
+      children: { select: { id: true } },
+    },
+  });
+}
 
 // ── Auth middleware ──────────────────────────────────────────────
-function requireApiKey(
+async function requireMcpAuth(
   req: express.Request,
   res: express.Response,
   next: express.NextFunction
 ) {
   const key = req.headers['x-api-key'];
-  if (key !== API_KEY) {
-    res.status(401).json({ error: 'Invalid or missing X-Api-Key header' });
+  if (key === API_KEY) {
+    next();
     return;
   }
-  next();
+
+  const authHeader = req.headers.authorization;
+  const bearerMatch = authHeader?.match(/^Bearer\s+(.+)$/i);
+  if (!bearerMatch) {
+    res
+      .status(401)
+      .setHeader('WWW-Authenticate', 'Bearer realm="kanban-mcp"')
+      .json({ error: 'Provide X-Api-Key or Authorization: Bearer <token>' });
+    return;
+  }
+
+  try {
+    const payload = await verifyBearerToken(bearerMatch[1]);
+    if (!payload) {
+      res
+        .status(401)
+        .setHeader('WWW-Authenticate', 'Bearer realm="kanban-mcp", error="invalid_token"')
+        .json({ error: 'OAuth bearer auth is not configured on this server' });
+      return;
+    }
+    next();
+  } catch {
+    res
+      .status(401)
+      .setHeader('WWW-Authenticate', 'Bearer realm="kanban-mcp", error="invalid_token"')
+      .json({ error: 'Invalid bearer token' });
+    return;
+  }
 }
 
 // ── Build MCP server ─────────────────────────────────────────────
@@ -103,7 +254,7 @@ function buildMcpServer(): McpServer {
     {
       projectId: z.string().describe('The project ID to list tasks from'),
       status: z
-        .enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'])
+        .enum(STATUS_VALUES)
         .optional()
         .describe('Filter by task status (column)'),
     },
@@ -121,10 +272,34 @@ function buildMcpServer(): McpServer {
         include: {
           assignee: { select: { id: true, email: true, name: true } },
           attachments: { select: { id: true, filename: true, size: true } },
+          children: { select: { id: true } },
         },
       });
+
+      const byGroup = new Map<string, typeof tasks>();
+      for (const task of tasks) {
+        const key = `${task.status}:${task.parentId ?? 'root'}`;
+        const group = byGroup.get(key);
+        if (group) group.push(task);
+        else byGroup.set(key, [task]);
+      }
+
+      const enriched = tasks.map((task) => {
+        const siblings = byGroup.get(`${task.status}:${task.parentId ?? 'root'}`) ?? [];
+        const idx = siblings.findIndex((s) => s.id === task.id);
+        return {
+          ...task,
+          hierarchy: {
+            parentId: task.parentId,
+            childIds: task.children.map((child) => child.id),
+            previousSiblingId: idx > 0 ? siblings[idx - 1].id : null,
+            nextSiblingId: idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1].id : null,
+          },
+        };
+      });
+
       return {
-        content: [{ type: 'text', text: JSON.stringify(tasks, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(enriched, null, 2) }],
       };
     }
   );
@@ -138,13 +313,15 @@ function buildMcpServer(): McpServer {
       creatorEmail: z.string().email().describe('Email of the user creating the task'),
       title: z.string().min(1).max(255).describe('Task title'),
       description: z.string().max(5000).optional().describe('Task description (markdown supported)'),
+      type: z.enum(WORK_ITEM_TYPES).optional().default('TASK').describe('Work item type'),
+      parentId: z.string().optional().describe('Parent ID (required for FEATURE/STORY/TASK)'),
       status: z
-        .enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'])
+        .enum(STATUS_VALUES)
         .optional()
         .default('BACKLOG')
         .describe('Initial column for the task'),
       priority: z
-        .enum(['LOW', 'MEDIUM', 'HIGH'])
+        .enum(PRIORITY_VALUES)
         .optional()
         .describe('Task priority'),
       dueDate: z
@@ -164,66 +341,141 @@ function buildMcpServer(): McpServer {
         .describe('Email of the user to assign the task to'),
     },
     async ({
-      projectId, creatorEmail, title, description, status,
-      priority, dueDate, labels, assigneeEmail,
+      projectId, creatorEmail, title, description, type, parentId,
+      status, priority, dueDate, labels, assigneeEmail,
     }) => {
-      const project = await prisma.project.findUnique({ where: { id: projectId } });
-      if (!project) {
-        return {
-          content: [{ type: 'text', text: `Error: Project ${projectId} not found` }],
-          isError: true,
-        };
-      }
-
-      const creator = await prisma.user.findUnique({ where: { email: creatorEmail } });
-      if (!creator) {
-        return {
-          content: [{ type: 'text', text: `Error: No user found with email ${creatorEmail}` }],
-          isError: true,
-        };
-      }
-
-      let assigneeId: string | undefined;
-      if (assigneeEmail) {
-        const assignee = await prisma.user.findUnique({ where: { email: assigneeEmail } });
-        if (!assignee) {
-          return {
-            content: [{ type: 'text', text: `Error: No user found with assignee email ${assigneeEmail}` }],
-            isError: true,
-          };
-        }
-        assigneeId = assignee.id;
-      }
-
-      const effectiveStatus = status ?? 'BACKLOG';
-      const lastTask = await prisma.task.findFirst({
-        where: { projectId, status: effectiveStatus },
-        orderBy: { position: 'desc' },
-      });
-      const position = (lastTask?.position ?? 0) + 1000;
-
-      const task = await prisma.task.create({
-        data: {
+      try {
+        const task = await createWorkItem({
+          projectId,
+          creatorEmail,
           title,
           description,
-          status: effectiveStatus,
+          type,
+          parentId,
+          status,
           priority,
-          dueDate: dueDate ? new Date(dueDate) : undefined,
-          labels: labels ?? [],
-          position,
-          projectId,
-          creatorId: creator.id,
-          assigneeId,
-        },
-        include: {
-          assignee: { select: { id: true, email: true, name: true } },
-          attachments: true,
-        },
-      });
+          dueDate,
+          labels,
+          assigneeEmail,
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(task, null, 2) }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
 
-      return {
-        content: [{ type: 'text', text: JSON.stringify(task, null, 2) }],
-      };
+  server.tool(
+    'create_epic',
+    'Create an epic in a project. The creator is identified by email.',
+    {
+      projectId: z.string().describe('ID of the project'),
+      creatorEmail: z.string().email().describe('Email of the user creating the epic'),
+      title: z.string().min(1).max(255).describe('Epic title'),
+      description: z.string().max(5000).optional(),
+      status: z.enum(STATUS_VALUES).optional().default('BACKLOG'),
+      priority: z.enum(PRIORITY_VALUES).optional(),
+      dueDate: z.string().optional().describe('Due date in ISO 8601 format'),
+      labels: z.array(z.string().max(50)).max(10).optional().default([]),
+      assigneeEmail: z.string().email().optional(),
+    },
+    async ({ projectId, creatorEmail, title, description, status, priority, dueDate, labels, assigneeEmail }) => {
+      try {
+        const epic = await createWorkItem({
+          projectId,
+          creatorEmail,
+          title,
+          description,
+          type: 'EPIC',
+          status,
+          priority,
+          dueDate,
+          labels,
+          assigneeEmail,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(epic, null, 2) }] };
+      } catch (error) {
+        return { content: [{ type: 'text', text: `Error: ${(error as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    'create_feature',
+    'Create a feature under an epic. The creator is identified by email.',
+    {
+      projectId: z.string().describe('ID of the project'),
+      creatorEmail: z.string().email().describe('Email of the user creating the feature'),
+      parentId: z.string().describe('Parent epic ID'),
+      title: z.string().min(1).max(255).describe('Feature title'),
+      description: z.string().max(5000).optional(),
+      status: z.enum(STATUS_VALUES).optional().default('BACKLOG'),
+      priority: z.enum(PRIORITY_VALUES).optional(),
+      dueDate: z.string().optional().describe('Due date in ISO 8601 format'),
+      labels: z.array(z.string().max(50)).max(10).optional().default([]),
+      assigneeEmail: z.string().email().optional(),
+    },
+    async ({ projectId, creatorEmail, parentId, title, description, status, priority, dueDate, labels, assigneeEmail }) => {
+      try {
+        const feature = await createWorkItem({
+          projectId,
+          creatorEmail,
+          title,
+          description,
+          type: 'FEATURE',
+          parentId,
+          status,
+          priority,
+          dueDate,
+          labels,
+          assigneeEmail,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(feature, null, 2) }] };
+      } catch (error) {
+        return { content: [{ type: 'text', text: `Error: ${(error as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    'create_story',
+    'Create a story under a feature. The creator is identified by email.',
+    {
+      projectId: z.string().describe('ID of the project'),
+      creatorEmail: z.string().email().describe('Email of the user creating the story'),
+      parentId: z.string().describe('Parent feature ID'),
+      title: z.string().min(1).max(255).describe('Story title'),
+      description: z.string().max(5000).optional(),
+      status: z.enum(STATUS_VALUES).optional().default('BACKLOG'),
+      priority: z.enum(PRIORITY_VALUES).optional(),
+      dueDate: z.string().optional().describe('Due date in ISO 8601 format'),
+      labels: z.array(z.string().max(50)).max(10).optional().default([]),
+      assigneeEmail: z.string().email().optional(),
+    },
+    async ({ projectId, creatorEmail, parentId, title, description, status, priority, dueDate, labels, assigneeEmail }) => {
+      try {
+        const story = await createWorkItem({
+          projectId,
+          creatorEmail,
+          title,
+          description,
+          type: 'STORY',
+          parentId,
+          status,
+          priority,
+          dueDate,
+          labels,
+          assigneeEmail,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(story, null, 2) }] };
+      } catch (error) {
+        return { content: [{ type: 'text', text: `Error: ${(error as Error).message}` }], isError: true };
+      }
     }
   );
 
@@ -234,7 +486,7 @@ function buildMcpServer(): McpServer {
     {
       taskId: z.string().describe('ID of the task to move'),
       status: z
-        .enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'])
+        .enum(STATUS_VALUES)
         .describe('Target column to move the task to'),
     },
     async ({ taskId, status }) => {
@@ -304,7 +556,7 @@ app.get('/health', (_req, res) => {
 });
 
 // MCP over SSE — one transport per connection
-app.get('/sse', requireApiKey, async (req, res) => {
+app.get('/sse', requireMcpAuth, async (req, res) => {
   const server = buildMcpServer();
   const transport = new SSEServerTransport('/messages', res);
   await server.connect(transport);
@@ -318,7 +570,7 @@ app.get('/sse', requireApiKey, async (req, res) => {
 // Message endpoint for the SSE transport
 const transports: Map<string, SSEServerTransport> = new Map();
 
-app.post('/messages', requireApiKey, async (req, res) => {
+app.post('/messages', requireMcpAuth, async (req, res) => {
   const sessionId = req.query.sessionId as string;
   const transport = transports.get(sessionId);
   if (!transport) {
@@ -333,7 +585,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Kanban MCP server running on port ${PORT}`);
   console.log(`  SSE endpoint : http://0.0.0.0:${PORT}/sse`);
   console.log(`  Health check : http://0.0.0.0:${PORT}/health`);
-  console.log(`  Auth         : X-Api-Key header required`);
+  console.log(`  Auth         : X-Api-Key or OAuth2 bearer token`);
 });
 
 // Graceful shutdown

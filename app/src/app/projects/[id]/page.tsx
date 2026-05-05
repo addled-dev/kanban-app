@@ -32,8 +32,14 @@ export default async function ProjectPage({ params }: { params: { id: string } }
     include: {
       assignee: { select: { id: true, email: true, name: true } },
       attachments: true,
+      children: { select: { id: true } },
     },
   });
+
+  const tasksWithHierarchy = tasks.map((task) => ({
+    ...task,
+    childIds: task.children.map((child) => child.id),
+  }));
 
   return (
     <AppShell
@@ -44,7 +50,7 @@ export default async function ProjectPage({ params }: { params: { id: string } }
     >
       <KanbanBoard
         project={JSON.parse(JSON.stringify(projectForUser))}
-        initialTasks={JSON.parse(JSON.stringify(tasks))}
+        initialTasks={JSON.parse(JSON.stringify(tasksWithHierarchy))}
         currentUserId={session.user.id}
         currentUserEmail={session.user.email ?? ''}
         currentUserName={session.user.name ?? null}

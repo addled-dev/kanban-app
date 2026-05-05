@@ -2,8 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { X, Trash2, Loader2, Paperclip, Plus, Calendar, Tag, User, AlertCircle } from 'lucide-react';
-import { Task, TaskStatus, Priority, COLUMNS, PRIORITY_CONFIG } from '@/types';
+import { Task, TaskStatus, Priority, WorkItemType, COLUMNS, PRIORITY_CONFIG, WORK_ITEM_TYPE_CONFIG } from '@/types';
 import { format } from 'date-fns';
+
+const PARENT_TYPE_BY_CHILD: Record<WorkItemType, WorkItemType | null> = {
+  EPIC: null,
+  FEATURE: 'EPIC',
+  STORY: 'FEATURE',
+  TASK: 'STORY',
+};
 
 interface Props {
   task: Task | null;
@@ -13,6 +20,7 @@ interface Props {
   currentUserEmail: string;
   currentUserName: string | null;
   readOnly: boolean;
+  availableTasks: Task[];
   onCreated: (t: Task) => void;
   onUpdated: (t: Task) => void;
   onDeleted: (id: string) => void;
@@ -22,11 +30,14 @@ interface Props {
 export default function TaskModal({
   task, defaultStatus, projectId, currentUserId, currentUserEmail, currentUserName,
   readOnly,
+  availableTasks,
   onCreated, onUpdated, onDeleted, onClose,
 }: Props) {
   const isNew = !task;
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
+  const [type, setType] = useState<WorkItemType>(task?.type ?? 'TASK');
+  const [parentId, setParentId] = useState<string>(task?.parentId ?? '');
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? defaultStatus ?? 'BACKLOG');
   const [priority, setPriority] = useState<Priority | ''>(task?.priority ?? '');
   const [dueDate, setDueDate] = useState(task?.dueDate ? format(new Date(task.dueDate), 'yyyy-MM-dd') : '');
@@ -43,6 +54,17 @@ export default function TaskModal({
 
   useEffect(() => { titleRef.current?.focus(); }, []);
   useEffect(() => {
+    const requiredParentType = PARENT_TYPE_BY_CHILD[type];
+    if (!requiredParentType) {
+      setParentId('');
+    } else if (parentId) {
+      const parent = availableTasks.find((item) => item.id === parentId);
+      if (!parent || parent.type !== requiredParentType) {
+        setParentId('');
+      }
+    }
+  }, [type, parentId, availableTasks]);
+  useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -56,9 +78,16 @@ export default function TaskModal({
   const handleSave = async () => {
     if (readOnly) return;
     if (!title.trim()) { setError('Title is required'); return; }
+    const requiredParentType = PARENT_TYPE_BY_CHILD[type];
+    if (requiredParentType && !parentId) {
+      setError(`${WORK_ITEM_TYPE_CONFIG[type].label} requires a parent ${requiredParentType.toLowerCase()}`);
+      return;
+    }
+
     setSaving(true); setError('');
     const payload = {
       title: title.trim(), description: description.trim() || null, status,
+      type, parentId: parentId || null,
       priority: priority || null, dueDate: dueDate ? new Date(dueDate).toISOString() : null,
       labels, assigneeId: selfAssigned ? currentUserId : null, projectId,
     };
@@ -71,6 +100,7 @@ export default function TaskModal({
         const res = await fetch(`/api/tasks/${task!.id}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: payload.title, description: payload.description,
+            type: payload.type, parentId: payload.parentId,
             priority: payload.priority, dueDate: payload.dueDate, labels: payload.labels,
             assigneeId: payload.assigneeId }),
         });
@@ -87,6 +117,13 @@ export default function TaskModal({
       }
     } finally { setSaving(false); }
   };
+
+  const requiredParentType = PARENT_TYPE_BY_CHILD[type];
+  const parentOptions = availableTasks.filter((item) => {
+    if (!requiredParentType) return false;
+    if (item.id === task?.id) return false;
+    return item.type === requiredParentType;
+  });
 
   const handleDelete = async () => {
     if (readOnly) return;
@@ -164,6 +201,12 @@ export default function TaskModal({
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
             <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', color: 'var(--vsc-muted)', marginBottom: 4, fontSize: 12 }}>Type</label>
+              <select className="vsc-input" value={type} onChange={e => setType(e.target.value as WorkItemType)} style={{ cursor: readOnly ? 'default' : 'pointer' }} disabled={readOnly}>
+                {(['EPIC','FEATURE','STORY','TASK'] as WorkItemType[]).map(t => <option key={t} value={t}>{WORK_ITEM_TYPE_CONFIG[t].label}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
               <label style={{ display: 'block', color: 'var(--vsc-muted)', marginBottom: 4, fontSize: 12 }}>Status</label>
               <select className="vsc-input" value={status} onChange={e => setStatus(e.target.value as TaskStatus)} style={{ cursor: readOnly ? 'default' : 'pointer' }} disabled={readOnly}>
                 {COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -176,6 +219,22 @@ export default function TaskModal({
                 {(['LOW','MEDIUM','HIGH'] as Priority[]).map(p => <option key={p} value={p}>{PRIORITY_CONFIG[p].label}</option>)}
               </select>
             </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', color: 'var(--vsc-muted)', marginBottom: 4, fontSize: 12 }}>Parent</label>
+            <select
+              className="vsc-input"
+              value={parentId}
+              onChange={e => setParentId(e.target.value)}
+              style={{ cursor: readOnly ? 'default' : 'pointer' }}
+              disabled={readOnly || !requiredParentType}
+            >
+              <option value="">{requiredParentType ? `Select ${requiredParentType.toLowerCase()}` : 'No parent required'}</option>
+              {parentOptions.map((item) => (
+                <option key={item.id} value={item.id}>{item.title}</option>
+              ))}
+            </select>
           </div>
 
           <div style={{ marginBottom: 14 }}>

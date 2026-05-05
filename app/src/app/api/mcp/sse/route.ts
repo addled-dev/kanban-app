@@ -1,36 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHash } from 'crypto';
-import { prisma } from '@/lib/prisma';
 import { buildMcpServer } from '@/lib/mcp-server';
 import { mcpSessions, NextJsTransport } from '@/lib/mcp-sessions';
+import { authenticateMcpRequest, mcpAuthErrorResponse } from '@/lib/mcp-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  // ── Authenticate ──────────────────────────────────────────────
-  const apiKey = req.headers.get('x-api-key');
-  if (!apiKey) {
-    return NextResponse.json({ error: 'X-Api-Key header required' }, { status: 401 });
-  }
-
-  const keyHash = createHash('sha256').update(apiKey).digest('hex');
-  const keyRecord = await prisma.mcpApiKey.findUnique({
-    where: { keyHash },
-    include: { user: { select: { id: true, email: true, role: true } } },
-  });
-
-  if (!keyRecord) {
-    return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
-  }
-
-  // Update lastUsed asynchronously (don't await)
-  prisma.mcpApiKey.update({
-    where: { id: keyRecord.id },
-    data: { lastUsed: new Date() },
-  }).catch(() => {});
-
-  const userId = keyRecord.userId;
+  const auth = await authenticateMcpRequest(req);
+  if (!auth) return mcpAuthErrorResponse();
+  const userId = auth.userId;
 
   // ── Build SSE stream ──────────────────────────────────────────
   let transport: NextJsTransport | undefined;

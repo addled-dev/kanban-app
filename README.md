@@ -80,14 +80,32 @@ Each user can create named API keys scoped to their own account:
 1. Go to **Settings → MCP API Keys** in the sidebar
 2. Enter a name (e.g. "Claude Desktop") → click **Generate Key**
 3. Copy the key immediately — it is shown only once
-4. Connect any MCP client using:
+4. Connect any MCP client using either API key or OAuth bearer token:
 
 ```
 SSE Endpoint : http://localhost:3000/api/mcp/sse
 Auth Header  : X-Api-Key: kb_<your-key>
+Auth Header  : Authorization: Bearer <oauth-access-token>
 ```
 
 The MCP server enforces user-level scoping — tools can only access the authenticated user's own projects and tasks.
+
+OAuth bearer validation is enabled when these environment variables are configured:
+
+- `MCP_OAUTH_ISSUER`
+- `MCP_OAUTH_JWKS_URL`
+- `MCP_OAUTH_AUDIENCE` (optional)
+
+### Work Item Hierarchy
+
+Tasks now support a strict hierarchy:
+
+1. Epic
+2. Feature (parent must be an Epic)
+3. Story (parent must be a Feature)
+4. Task (parent must be a Story)
+
+Each card shows a type symbol and color marker for quick visual scanning.
 
 ### MCP Tools
 
@@ -95,8 +113,11 @@ The MCP server enforces user-level scoping — tools can only access the authent
 |---|---|
 | `list_projects` | List all your projects |
 | `create_project` | Create a new project |
-| `list_tasks` | List tasks in a project (optional status filter) |
-| `create_task` | Create a task with full field support |
+| `list_tasks` | List items in a project (optional status filter), including hierarchy metadata |
+| `create_task` | Create a work item (defaults to `TASK`; accepts type + parent) |
+| `create_epic` | Create an epic |
+| `create_feature` | Create a feature under an epic |
+| `create_story` | Create a story under a feature |
 | `move_task` | Move a task to a different column |
 | `delete_task` | Permanently delete a task |
 

@@ -1,5 +1,6 @@
 export type TaskStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH';
+export type WorkItemType = 'EPIC' | 'FEATURE' | 'STORY' | 'TASK';
 export type ProjectRole = 'ADMIN' | 'READ_WRITE' | 'VIEW';
 
 export interface User {
@@ -54,6 +55,8 @@ export interface Task {
   id: string;
   title: string;
   description: string | null;
+  type: WorkItemType;
+  parentId: string | null;
   status: TaskStatus;
   priority: Priority | null;
   dueDate: string | null;
@@ -63,10 +66,20 @@ export interface Task {
   creatorId: string;
   assigneeId: string | null;
   assignee: User | null;
+  childIds?: string[];
+  previousSiblingId?: string | null;
+  nextSiblingId?: string | null;
   attachments: Attachment[];
   createdAt: string;
   updatedAt: string;
 }
+
+export const WORK_ITEM_TYPE_CONFIG: Record<WorkItemType, { label: string; symbol: string; color: string; darkColor: string }> = {
+  EPIC: { label: 'Epic', symbol: 'E', color: '#7c3aed', darkColor: '#c4b5fd' },
+  FEATURE: { label: 'Feature', symbol: 'F', color: '#2563eb', darkColor: '#93c5fd' },
+  STORY: { label: 'Story', symbol: 'S', color: '#db2777', darkColor: '#f9a8d4' },
+  TASK: { label: 'Task', symbol: 'T', color: '#0f766e', darkColor: '#5eead4' },
+};
 
 export interface McpApiKey {
   id: string;

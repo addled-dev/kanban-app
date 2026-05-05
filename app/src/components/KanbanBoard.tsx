@@ -185,6 +185,7 @@ export default function KanbanBoard({
           currentUserEmail={currentUserEmail}
           currentUserName={currentUserName}
           readOnly={!canEdit}
+          availableTasks={Object.values(columns).flat()}
           onCreated={handleCreated}
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}
