@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { prisma } from './prisma';
+import { getOrigin, protectedResourceMetadataUrl } from './oauth';
 
 const OAUTH_ISSUER = process.env.MCP_OAUTH_ISSUER;
 const OAUTH_AUDIENCE = process.env.MCP_OAUTH_AUDIENCE;
@@ -36,6 +37,25 @@ async function authenticateWithApiKey(rawApiKey: string) {
 }
 
 async function authenticateWithBearerToken(token: string) {
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const localToken = await prisma.mcpOAuthAccessToken.findUnique({
+    where: { tokenHash },
+    select: { id: true, userId: true, expiresAt: true },
+  });
+  if (localToken) {
+    if (localToken.expiresAt.getTime() <= Date.now()) return null;
+
+    prisma.mcpOAuthAccessToken.update({
+      where: { id: localToken.id },
+      data: { lastUsed: new Date() },
+    }).catch(() => {});
+
+    return {
+      userId: localToken.userId,
+      method: 'oauth_bearer' as const,
+    };
+  }
+
   const keyset = getJwks();
   if (!keyset || !OAUTH_ISSUER) return null;
 
@@ -84,7 +104,9 @@ export async function authenticateMcpRequest(req: Request) {
   return null;
 }
 
-export function mcpAuthErrorResponse() {
+export function mcpAuthErrorResponse(req: Request) {
+  const resourceMetadata = protectedResourceMetadataUrl(getOrigin(req));
+
   return new Response(
     JSON.stringify({
       error: 'Provide X-Api-Key or Authorization: Bearer <token>',
@@ -93,7 +115,7 @@ export function mcpAuthErrorResponse() {
       status: 401,
       headers: {
         'Content-Type': 'application/json',
-        'WWW-Authenticate': 'Bearer realm="kanban-mcp"',
+        'WWW-Authenticate': `Bearer realm="kanban-mcp", resource_metadata="${resourceMetadata}", scope="mcp:read mcp:write"`,
       },
     }
   );

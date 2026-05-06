@@ -88,6 +88,17 @@ export interface McpApiKey {
   createdAt: string;
 }
 
+export interface McpOAuthClient {
+  id: string;
+  name: string;
+  clientId: string;
+  redirectUris: string[];
+  tokenEndpointAuthMethod: string;
+  lastUsed: string | null;
+  createdAt: string;
+  _count: { accessTokens: number };
+}
+
 export const COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: 'BACKLOG', label: 'Backlog' },
   { id: 'TODO', label: 'To Do' },

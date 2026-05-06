@@ -17,6 +17,7 @@ function LoginForm() {
 
   const success = params.get('reset') === '1' ? 'Password updated — sign in below.'
     : params.get('invited') === '1' ? 'Account created — sign in below.' : null;
+  const callbackUrl = params.get('callbackUrl');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +27,7 @@ function LoginForm() {
         email: email.toLowerCase().trim(), password, redirect: false,
       });
       if (res?.error) setError(res.error);
-      else { router.push('/dashboard'); router.refresh(); }
+      else { router.push(callbackUrl || '/dashboard'); router.refresh(); }
     } finally { setLoading(false); }
   };
 

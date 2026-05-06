@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   const auth = await authenticateMcpRequest(req);
-  if (!auth) return mcpAuthErrorResponse();
+  if (!auth) return mcpAuthErrorResponse(req);
 
   const sessionId = req.nextUrl.searchParams.get('sessionId');
   if (!sessionId) {

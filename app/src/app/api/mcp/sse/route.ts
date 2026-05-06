@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const auth = await authenticateMcpRequest(req);
-  if (!auth) return mcpAuthErrorResponse();
+  if (!auth) return mcpAuthErrorResponse(req);
   const userId = auth.userId;
 
   // ── Build SSE stream ──────────────────────────────────────────

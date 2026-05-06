@@ -55,6 +55,9 @@ model User {
   assignedTasks       Task[]               @relation("TaskAssignee")
   passwordResetTokens PasswordResetToken[]
   mcpApiKeys          McpApiKey[]
+  mcpOAuthClients     McpOAuthClient[]
+  mcpOAuthCodes       McpOAuthAuthorizationCode[]
+  mcpOAuthTokens      McpOAuthAccessToken[]
 }
 
 model InviteToken {
@@ -100,6 +103,65 @@ model McpApiKey {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model McpOAuthClient {
+  id                  String   @id @default(cuid())
+  userId              String?
+  name                String
+  clientId            String   @unique
+  clientSecretHash    String?
+  redirectUris        String[]
+  tokenEndpointAuthMethod String @default("none")
+  lastUsed            DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user         User?                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codes        McpOAuthAuthorizationCode[]
+  accessTokens McpOAuthAccessToken[]
+
+  @@index([userId])
+  @@index([clientId])
+}
+
+model McpOAuthAuthorizationCode {
+  id                  String    @id @default(cuid())
+  userId              String
+  clientId            String
+  codeHash            String    @unique
+  redirectUri         String
+  codeChallenge       String
+  codeChallengeMethod String
+  scope               String?
+  expiresAt           DateTime
+  usedAt              DateTime?
+  createdAt           DateTime  @default(now())
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client McpOAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([expiresAt])
+}
+
+model McpOAuthAccessToken {
+  id        String    @id @default(cuid())
+  userId    String
+  clientId  String
+  tokenHash String    @unique
+  scope     String?
+  expiresAt DateTime
+  lastUsed  DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client McpOAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([expiresAt])
 }
 
 model Project {

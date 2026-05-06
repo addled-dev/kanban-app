@@ -15,9 +15,27 @@ export default async function ApiKeysPage() {
     select: { id: true, name: true, lastUsed: true, createdAt: true },
   });
 
+  const oauthClients = await prisma.mcpOAuthClient.findMany({
+    where: { userId: session.user.id },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      name: true,
+      clientId: true,
+      redirectUris: true,
+      tokenEndpointAuthMethod: true,
+      lastUsed: true,
+      createdAt: true,
+      _count: { select: { accessTokens: true } },
+    },
+  });
+
   return (
     <AppShell>
-      <ApiKeysClient keys={JSON.parse(JSON.stringify(keys))} />
+      <ApiKeysClient
+        keys={JSON.parse(JSON.stringify(keys))}
+        oauthClients={JSON.parse(JSON.stringify(oauthClients))}
+      />
     </AppShell>
   );
 }
